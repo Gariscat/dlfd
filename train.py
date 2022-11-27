@@ -15,16 +15,26 @@ import argparse
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-SEED = 0
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
 
-EPOCHS = 5
-LR = 1e-3
-BATCH_SIZE = 32
-DATA_PATH = './traces/'
-SEQ_LEN = 256
+parser = argparse.ArgumentParser()
+parser.add_argument('--source_id', type=int, default=3)
+parser.add_argument('--obs_ord', type=int, default=1)
+parser.add_argument('--hidden_size', type=int, default=32)
+parser.add_argument('--scale', type=float, default=1e8)
+parser.add_argument('--num_layers', type=int, default=1)
+parser.add_argument('--epochs', type=int, default=2)
+parser.add_argument('--lr', type=float, default=1e-3)
+parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--data_path', type=str, default='./traces/')
+parser.add_argument('--seq_len', type=int, default=256)
+parser.add_argument('--loss', type=str, default='mse')
+parser.add_argument('--backbone', type=str, default='lstm')
+parser.add_argument('--seed', type=int, default=0)
+args = parser.parse_args()
+
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
 
 
 def one_epoch(
@@ -33,10 +43,10 @@ def one_epoch(
     mode: str,
     device: torch.device = DEVICE,
     epoch_id: int = None,
-    loss_cls: any = nn.MSELoss,
     optimizer: any = optim.SGD,
-    seq_len: int = SEQ_LEN,
+    args: argparse.Namespace = None,
 ):
+    loss_cls = nn.MSELoss if args.loss == 'mse' else None
     def run(mode, device=device, loss_cls=loss_cls):
         criterion = loss_cls()
         losses = []
@@ -44,17 +54,18 @@ def one_epoch(
         length = 0
         for r in trange(1, data.shape[0], desc='Epoch '+str(epoch_id+1)+' '+mode):
             # inputs, targets = batch[0].to(device), batch[1].to(device)
-            l = max(0, r-seq_len)
+            l = max(0, r-args.seq_len)
             source = torch.from_numpy(data[l:r])
-            left_zeros = torch.zeros(seq_len-source.shape[0], source.shape[1])
-            source = torch.cat((left_zeros, source), dim=0).unsqueeze(0).float().to(device)
+            if r < args.seq_len: # left paddings
+                left_zeros = torch.zeros(args.seq_len-source.shape[0], source.shape[1])
+                source = torch.cat((left_zeros, source), dim=0)
+            source = source.unsqueeze(0).float().to(device)
             target = torch.tensor([data[r][0]]).reshape(1, 1).float().to(device)
-
             length += source.shape[0]
-
+            # forward
             output = model(source)
             pred = torch.argmax(output, dim=1)
-            
+            # criteria
             loss = criterion(output, target)
             fp_cnt += torch.sum(pred < target).item()
             detection_time = torch.maximum(
@@ -72,7 +83,7 @@ def one_epoch(
         return {'loss': np.mean(losses), 'fpr': fp_cnt / length, 'td_avg': td_tot / length}
 
     if mode == 'train':
-        opt = optimizer(model.parameters(), lr=LR)
+        opt = optimizer(model.parameters(), lr=args.lr)
         model = model.train()
         return run(mode, device)
     else:
@@ -85,25 +96,24 @@ def train(
     model: nn.Module,
     train_data: np.ndarray,
     test_data: np.ndarray,
-    epochs: int = EPOCHS,
+    args: argparse.Namespace,
     device: torch.device = DEVICE,
     writer: SummaryWriter = None,
     evaluate_first: bool = True
 ):
     model.to(device)
-    epoch = -1
     if evaluate_first:
-        one_epoch(model, test_data, 'val', device, epoch)
+        one_epoch(model, test_data, 'val', device, -1, args=args)
         
-    for epoch in range(epochs):
-        train_ret = one_epoch(model, train_data, 'train', device, epoch)
+    for epoch in range(args.epochs):
+        train_ret = one_epoch(model, train_data, 'train', device, epoch, args=args)
 
         print('Epoch {}: '.format(epoch+1))
         print(f"train loss: {train_ret['loss']}")
         print(f"train fpr: {train_ret['fpr']}")
         print(f"train td_avg: {train_ret['td_avg']}")
 
-        val_ret = one_epoch(model, test_data, 'val', device, epoch)
+        val_ret = one_epoch(model, test_data, 'val', device, epoch, args=args)
         
         print(f"eval loss: {val_ret['loss']}")
         print(f"eval fpr: {val_ret['fpr']}")
@@ -130,14 +140,29 @@ def evaluate(model, device, data, comment='eval', epoch_id=None):
 if __name__ == '__main__':
     train_data, test_data = get_data(
         trace_path='./traces/trace.log',
-        source_id=3,
-        obs_ord=3,
-        scale=1e8,
+        source_id=args.source_id,
+        obs_ord=args.obs_ord,
+        scale=args.scale,
     )
-    model = RNNPredictor(rnn=nn.LSTM)
+    rnn_cls = nn.LSTM if args.backbone == 'lstm' else nn.RNN
+    model = RNNPredictor(
+        obs_ord=args.obs_ord,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
+        rnn=rnn_cls
+    )
+
+    log_dir = './runs/'
+    ckpt_dir = './ckpt/'
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(ckpt_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=log_dir)
+    writer.add_hparams(vars(args), metric_dict={'loss': np.inf})
+
     train(
         model=model,
         train_data=train_data,
         test_data=test_data,
-        evaluate_first=True
+        args=args,
+        writer=writer,
     )
