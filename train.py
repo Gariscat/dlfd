@@ -24,34 +24,42 @@ EPOCHS = 5
 LR = 1e-3
 BATCH_SIZE = 32
 DATA_PATH = './traces/'
+SEQ_LEN = 256
 
 
 def one_epoch(
     model: nn.Module,
-    loader: DataLoader,
+    data: np.ndarray,
     mode: str,
     device: torch.device = DEVICE,
     epoch_id: int = None,
     loss_cls: any = nn.MSELoss,
     optimizer: any = optim.SGD,
+    seq_len: int = SEQ_LEN,
 ):
-    def run(mode, loss_cls=loss_cls, device=device):
+    def run(mode, device=device, loss_cls=loss_cls):
         criterion = loss_cls()
         losses = []
         fp_cnt, td_tot = 0, 0
         length = 0
-        for batch in tqdm(loader, desc='Epoch '+str(epoch_id+1)+' '+mode):
-            inputs, targets = batch[0].to(device), batch[1].to(device)
-            length += inputs.shape[0]
+        for r in trange(1, data.shape[0], desc='Epoch '+str(epoch_id+1)+' '+mode):
+            # inputs, targets = batch[0].to(device), batch[1].to(device)
+            l = max(0, r-seq_len)
+            source = torch.from_numpy(data[l:r])
+            left_zeros = torch.zeros(seq_len-source.shape[0], source.shape[1])
+            source = torch.cat((left_zeros, source), dim=0).unsqueeze(0).float().to(device)
+            target = torch.tensor([data[r][0]]).reshape(1, 1).float().to(device)
 
-            outputs = model(inputs)
-            preds = torch.argmax(outputs, dim=1)
+            length += source.shape[0]
+
+            output = model(source)
+            pred = torch.argmax(output, dim=1)
             
-            loss = criterion(outputs, targets)
-            fp_cnt += torch.sum(preds < targets).item()
+            loss = criterion(output, target)
+            fp_cnt += torch.sum(pred < target).item()
             detection_time = torch.maximum(
-                input=preds-targets,
-                other=torch.zeros_like(preds)
+                input=pred-target,
+                other=torch.zeros_like(pred)
             )
             td_tot += torch.sum(detection_time).item()
             losses.append(loss.item())
@@ -75,8 +83,8 @@ def one_epoch(
 
 def train(
     model: nn.Module,
-    train_loader: DataLoader,
-    val_loader: DataLoader,
+    train_data: np.ndarray,
+    test_data: np.ndarray,
     epochs: int = EPOCHS,
     device: torch.device = DEVICE,
     writer: SummaryWriter = None,
@@ -85,17 +93,17 @@ def train(
     model.to(device)
     epoch = -1
     if evaluate_first:
-        evaluate(model, device, val_loader, 'val', epoch)
+        one_epoch(model, test_data, 'val', device, epoch)
         
     for epoch in range(epochs):
-        train_ret = one_epoch(model, train_loader, 'train', device, epoch)
+        train_ret = one_epoch(model, train_data, 'train', device, epoch)
 
         print('Epoch {}: '.format(epoch+1))
         print(f"train loss: {train_ret['loss']}")
         print(f"train fpr: {train_ret['fpr']}")
         print(f"train td_avg: {train_ret['td_avg']}")
 
-        val_ret = evaluate(model, device, val_loader, 'val', epoch)
+        val_ret = one_epoch(model, test_data, 'val', device, epoch)
         
         print(f"eval loss: {val_ret['loss']}")
         print(f"eval fpr: {val_ret['fpr']}")
@@ -111,32 +119,25 @@ def train(
     
     model.cpu()
             
-
-def evaluate(model, device=DEVICE, loader=None, comment='eval', epoch_id=None):
-    if loader is None:
-        return None
-    
+"""
+def evaluate(model, device, data, comment='eval', epoch_id=None):
     model = model.to(device)
-    val_ret = one_epoch(model, loader, 'eval', device, epoch_id)
+    val_ret = one_epoch(model, data, 'eval', device, epoch_id)
 
     return val_ret
 
-
+"""
 if __name__ == '__main__':
-    train_set, val_set = get_data(
+    train_data, test_data = get_data(
         trace_path='./traces/trace.log',
         source_id=3,
         obs_ord=3,
         scale=1e8,
-        seq_len=1024
     )
-    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=True)
-    
-    model = RNNPredictor(rnn=nn.GRU)
+    model = RNNPredictor(rnn=nn.LSTM)
     train(
         model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
+        train_data=train_data,
+        test_data=test_data,
         evaluate_first=True
     )

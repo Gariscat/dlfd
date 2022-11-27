@@ -32,7 +32,7 @@ class RNNPredictor(nn.Module):
 
     def forward(self, observations):
         # print(type(observations), observations.shape, type(self.net))
-        last_hidden_states, (_, _) = self.net(observations)
+        last_hidden_states, (_, _) = self.rnn(observations)
         # print(last_hidden_states.shape)
         t = last_hidden_states[:, -1, :]
         preds = self.mlp(t)
