@@ -50,5 +50,5 @@ coverage.xml
 docs/_build/
 
 # Logs and checkpoints
-runs/
-ckpt/
+runs/*
+ckpt/*
