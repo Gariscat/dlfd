@@ -12,6 +12,8 @@ from torch import nn, optim
 from utils import *
 from networks import RNNPredictor, RNNPredictorSpecAug
 import argparse
+from datetime import datetime
+import re
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -78,7 +80,7 @@ def one_epoch(
             losses.append(loss.item())
 
             if writer:
-                writer.add_scaler(f'step_loss/{mode}', loss.item())
+                writer.add_scalar(f'step_loss/{mode}', loss.item())
 
             if mode == 'train':
                 opt.zero_grad()
@@ -143,7 +145,8 @@ def evaluate(model, device, data, comment='eval', epoch_id=None):
 
 """
 if __name__ == '__main__':
-    print(args)
+    print(vars(args))
+    # exit()
     train_data, test_data = get_data(
         trace_path='./traces/trace.log',
         source_id=args.source_id,
@@ -160,11 +163,13 @@ if __name__ == '__main__':
         seq_len=args.seq_len,
     )
 
-    log_dir = './runs/'
-    ckpt_dir = './ckpt/'
-    os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(ckpt_dir, exist_ok=True)
+    cur_time = re.sub(r'\W+', '', str(datetime.now()))
+    tb_dir = os.path.join('./runs/', cur_time)
+    os.makedirs(tb_dir, exist_ok=True)
+
     writer = SummaryWriter(log_dir=log_dir)
+    for k, v in vars(args):
+        writer.add_text(k, str(v))
     # writer.add_hparams(vars(args), metric_dict={'loss': np.inf})
 
     train(
@@ -174,3 +179,4 @@ if __name__ == '__main__':
         args=args,
         writer=writer,
     )
+    

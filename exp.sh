@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J dlfd_spec_exp
+#SBATCH -J dlfd_SpecAug_vs_BaseLSTM
 #SBATCH --verbose
 #SBATCH -p aquila
 #SBATCH --ntasks-per-node=1
@@ -8,7 +8,7 @@
 #SBATCH --mem=32GB
 #SBATCH --mail-type=END
 #SBATCH --mail-user=xl3133@nyu.edu
-#SBATCH --array=4-6
+#SBATCH --array=1-3
 #SBATCH --output=runs/output_%a.out
 #SBATCH --error=runs/output_%a.err
 

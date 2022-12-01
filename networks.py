@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import librosa
+from scipy.signal import stft
 import numpy as np
 
 
@@ -77,7 +77,7 @@ class RNNPredictorSpecAug(nn.Module):
     def forward(self, observations):
         raw = observations[:, :, 0].flatten().cpu().numpy()  # (batch_size, seq_len, dim)
         seq_len = raw.shape[0]
-        spec = librosa.stft(raw, n_fft=seq_len)
+        _, __, spec = stft(raw, nperseg=seq_len)
         mag_0, pha_0 = np.abs(spec)[:, 0], np.angle(spec)[:, 0]
         aug = torch.cat((torch.from_numpy(mag_0), torch.from_numpy(pha_0)))
         aug = torch.stack([aug]*seq_len).unsqueeze(0)
