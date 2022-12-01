@@ -11,9 +11,10 @@ for i in (1, 3, 5, 7, 9):
         obs_ord=2,
         scale=1e8,
     )
-    sig = test_data[:10000, 0]
+    sig = test_data[:2048, 0]
     fft = librosa.stft(sig)
     mag, pha = np.abs(fft), np.angle(fft)
+    print(mag.shape)
     plt.imshow(mag)
     plt.savefig(f'./temp_node{i}.jpg')
     plt.close()

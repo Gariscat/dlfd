@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from torch import nn, optim
 from utils import *
-from networks import RNNPredictor
+from networks import RNNPredictor, RNNPredictorSpecAug
 import argparse
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -22,7 +22,7 @@ parser.add_argument('--obs_ord', type=int, default=1)
 parser.add_argument('--hidden_size', type=int, default=32)
 parser.add_argument('--scale', type=float, default=1e8)
 parser.add_argument('--num_layers', type=int, default=1)
-parser.add_argument('--epochs', type=int, default=2)
+parser.add_argument('--epochs', type=int, default=1)
 parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--data_path', type=str, default='./traces/')
@@ -30,6 +30,7 @@ parser.add_argument('--seq_len', type=int, default=256)
 parser.add_argument('--loss', type=str, default='mse')
 parser.add_argument('--backbone', type=str, default='lstm')
 parser.add_argument('--seed', type=int, default=0)
+parser.add_argument('--spec_aug', type=bool, default=False)
 args = parser.parse_args()
 
 random.seed(args.seed)
@@ -45,9 +46,10 @@ def one_epoch(
     epoch_id: int = None,
     optimizer: any = optim.SGD,
     args: argparse.Namespace = None,
+    writer: SummaryWriter = None,
 ):
     loss_cls = nn.MSELoss if args.loss == 'mse' else None
-    def run(mode, device=device, loss_cls=loss_cls):
+    def run(mode, device=device, loss_cls=loss_cls, writer=writer):
         criterion = loss_cls()
         losses = []
         fp_cnt, td_tot = 0, 0
@@ -74,6 +76,9 @@ def one_epoch(
             )
             td_tot += torch.sum(detection_time).item()
             losses.append(loss.item())
+
+            if writer:
+                writer.add_scaler(f'step_loss/{mode}', loss.item())
 
             if mode == 'train':
                 opt.zero_grad()
@@ -103,17 +108,17 @@ def train(
 ):
     model.to(device)
     if evaluate_first:
-        one_epoch(model, test_data, 'val', device, -1, args=args)
+        one_epoch(model, test_data, 'val', device, -1, args=args, writer=writer)
         
     for epoch in range(args.epochs):
-        train_ret = one_epoch(model, train_data, 'train', device, epoch, args=args)
+        train_ret = one_epoch(model, train_data, 'train', device, epoch, args=args, writer=writer)
 
         print('Epoch {}: '.format(epoch+1))
         print(f"train loss: {train_ret['loss']}")
         print(f"train fpr: {train_ret['fpr']}")
         print(f"train td_avg: {train_ret['td_avg']}")
 
-        val_ret = one_epoch(model, test_data, 'val', device, epoch, args=args)
+        val_ret = one_epoch(model, test_data, 'val', device, epoch, args=args, writer=writer)
         
         print(f"eval loss: {val_ret['loss']}")
         print(f"eval fpr: {val_ret['fpr']}")
@@ -138,6 +143,7 @@ def evaluate(model, device, data, comment='eval', epoch_id=None):
 
 """
 if __name__ == '__main__':
+    print(args)
     train_data, test_data = get_data(
         trace_path='./traces/trace.log',
         source_id=args.source_id,
@@ -145,11 +151,13 @@ if __name__ == '__main__':
         scale=args.scale,
     )
     rnn_cls = nn.LSTM if args.backbone == 'lstm' else nn.RNN
-    model = RNNPredictor(
+    model_cls = RNNPredictor if not args.spec_aug else RNNPredictorSpecAug
+    model = model_cls(
         obs_ord=args.obs_ord,
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
-        rnn=rnn_cls
+        rnn=rnn_cls,
+        seq_len=args.seq_len,
     )
 
     log_dir = './runs/'
@@ -157,7 +165,7 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
     writer = SummaryWriter(log_dir=log_dir)
-    writer.add_hparams(vars(args), metric_dict={'loss': np.inf})
+    # writer.add_hparams(vars(args), metric_dict={'loss': np.inf})
 
     train(
         model=model,
