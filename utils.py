@@ -10,7 +10,9 @@ def parse_trace(
     trace_path,
     source_id,
     obs_ord=2,
-    scale=1e8
+    scale=1e8,
+    reduced=True,
+    lim=100000,
 ) -> np.ndarray:
     rece_times = []
     with open(trace_path, 'r') as f:
@@ -40,6 +42,9 @@ def parse_trace(
     ret[:, 0] = gaps
     for i in range(obs_ord-1):
         ret[i+1:, i+1] = ret[i+1:, i] - ret[:-i-1, i]
+
+    if reduced:
+        ret = ret[:lim, :]
 
     return ret
     """

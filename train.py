@@ -39,6 +39,7 @@ random.seed(args.seed)
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
+GLOBAL_STEPS = 0
 
 def one_epoch(
     model: nn.Module,
@@ -80,7 +81,9 @@ def one_epoch(
             losses.append(loss.item())
 
             if writer:
-                writer.add_scalar(f'step_loss/{mode}', loss.item())
+                global GLOBAL_STEPS
+                writer.add_scalar(f'step_loss/{mode}', loss.item(), GLOBAL_STEPS)
+                GLOBAL_STEPS += 1
 
             if mode == 'train':
                 opt.zero_grad()
@@ -167,8 +170,9 @@ if __name__ == '__main__':
     tb_dir = os.path.join('./runs/', cur_time)
     os.makedirs(tb_dir, exist_ok=True)
 
-    writer = SummaryWriter(log_dir=log_dir)
-    for k, v in vars(args):
+    writer = SummaryWriter(log_dir=tb_dir)
+    hyper_dict = vars(args)
+    for k, v in hyper_dict.items():
         writer.add_text(k, str(v))
     # writer.add_hparams(vars(args), metric_dict={'loss': np.inf})
 
@@ -179,4 +183,3 @@ if __name__ == '__main__':
         args=args,
         writer=writer,
     )
-    

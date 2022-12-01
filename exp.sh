@@ -4,7 +4,7 @@
 #SBATCH -p aquila
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=48:00:00
-#SBATCH --gres=gpu:2080Ti:1
+#SBATCH --gres=gpu:1
 #SBATCH --mem=32GB
 #SBATCH --mail-type=END
 #SBATCH --mail-user=xl3133@nyu.edu
