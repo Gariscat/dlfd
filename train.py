@@ -15,6 +15,8 @@ import argparse
 from datetime import datetime
 import re
 
+import wandb
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -24,9 +26,9 @@ parser.add_argument('--obs_ord', type=int, default=1)
 parser.add_argument('--hidden_size', type=int, default=32)
 parser.add_argument('--scale', type=float, default=1e8)
 parser.add_argument('--num_layers', type=int, default=1)
-parser.add_argument('--epochs', type=int, default=1)
-parser.add_argument('--lr', type=float, default=1e-3)
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--epochs', type=int, default=10)
+parser.add_argument('--lr', type=float, default=5e-4)
+parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--data_path', type=str, default='./traces/')
 parser.add_argument('--seq_len', type=int, default=256)
 parser.add_argument('--loss', type=str, default='mse')
@@ -128,6 +130,13 @@ def train(
         print(f"eval loss: {val_ret['loss']}")
         print(f"eval fpr: {val_ret['fpr']}")
         print(f"eval td_avg: {val_ret['td_avg']}")
+
+        log_items = {}
+        for k, v in train_ret:
+            log_items[f'train_{k}'] = v
+        for k, v in val_ret:
+            log_items[f'train_{k}'] = v
+        wandb.log(log_items)
         
         if writer:
             writer.add_scalar('loss/train', train_ret['loss'], epoch)
@@ -148,8 +157,12 @@ def evaluate(model, device, data, comment='eval', epoch_id=None):
 
 """
 if __name__ == '__main__':
-    print(vars(args))
+    hyper_dict = vars(args)
+    print(hyper_dict)
     # exit()
+
+    wandb.init(project='dlfd', entity='gariscat', config=hyper_dict)
+
     train_data, test_data = get_data(
         trace_path='./traces/trace.log',
         source_id=args.source_id,
@@ -171,7 +184,6 @@ if __name__ == '__main__':
     os.makedirs(tb_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=tb_dir)
-    hyper_dict = vars(args)
     for k, v in hyper_dict.items():
         writer.add_text(k, str(v))
     # writer.add_hparams(vars(args), metric_dict={'loss': np.inf})

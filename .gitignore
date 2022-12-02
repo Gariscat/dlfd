@@ -52,3 +52,4 @@ docs/_build/
 # Logs and checkpoints
 runs/*
 ckpt/*
+wandb/*
