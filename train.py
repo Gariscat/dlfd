@@ -82,7 +82,7 @@ def one_epoch(
             if args.wandb:
                 wandb.log({
                     'step loss': loss.item(),
-                    'step detection time (scaled)': detection_time，
+                    'step detection time (scaled)': detection_time,
                     'step fp': (pred < target).item()
                 })
             fp_cnt += (pred < target).item()
