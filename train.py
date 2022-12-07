@@ -28,7 +28,6 @@ parser.add_argument('--scale', type=float, default=1e6)
 parser.add_argument('--num_layers', type=int, default=1)
 parser.add_argument('--epochs', type=int, default=5)
 parser.add_argument('--lr', type=float, default=5e-4)
-parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--data_path', type=str, default='./traces/')
 parser.add_argument('--seq_len', type=int, default=256)
 parser.add_argument('--loss', type=str, default='mse')
@@ -36,6 +35,7 @@ parser.add_argument('--backbone', type=str, default='lstm')
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--model', type=str, default='Chen')
 parser.add_argument('--do_parse_only', type=bool, default=False)
+parser.add_argument('--wandb', type=bool, default=True)
 args = parser.parse_args()
 
 random.seed(args.seed)
@@ -60,7 +60,7 @@ def one_epoch(
         losses = []
         fp_cnt, td_tot = 0, 0
         length = 0
-        for r in trange(1, data.shape[0], desc='Epoch '+str(epoch_id+1)+' '+mode):
+        for r in trange(1, data.shape[0], desc='Epoch '+str(epoch_id)+' '+mode):
             # inputs, targets = batch[0].to(device), batch[1].to(device)
             l = max(0, r-args.seq_len)
             source = torch.from_numpy(data[l:r])
@@ -75,12 +75,18 @@ def one_epoch(
             pred = torch.argmax(output, dim=1)
             # criteria
             loss = criterion(output, target)
-            fp_cnt += torch.sum(pred < target).item()
             detection_time = torch.maximum(
                 input=pred-target,
                 other=torch.zeros_like(pred)
             )
-            td_tot += torch.sum(detection_time).item()
+            if args.wandb:
+                wandb.log({
+                    'step loss': loss.item(),
+                    'step detection time (scaled)': detection_time，
+                    'step fp': (pred < target).item()
+                })
+            fp_cnt += (pred < target).item()
+            td_tot += detection_time.item()
             losses.append(loss.item())
 
             if writer:
@@ -116,14 +122,19 @@ def train(
 ):
     model.to(device)
     if evaluate_first:
-        one_epoch(model, test_data, 'val', device, epoch_id=-1, args=args, writer=writer)
-    if args.model == 'Chen':
+        train_ret = {'loss': None, 'fpr': None, 'td_avg': None}
+        val_ret = one_epoch(model, test_data, 'val', device, epoch_id=0, args=args, writer=writer)
+
+        if args.wandb:
+            wandb.log(log_epoch(train_ret, val_ret))
+
+    if args.model == 'Chen':  # not trainable
         return
 
-    for epoch in range(args.epochs):
+    for epoch in range(1, args.epochs+1):
         train_ret = one_epoch(model, train_data, 'train', device, epoch_id=epoch, args=args, writer=writer)
 
-        print('Epoch {}: '.format(epoch+1))
+        print('Epoch {}: '.format(epoch))
         print(f"train loss: {train_ret['loss']}")
         print(f"train fpr: {train_ret['fpr']}")
         print(f"train td_avg: {train_ret['td_avg']}")
@@ -134,12 +145,8 @@ def train(
         print(f"eval fpr: {val_ret['fpr']}")
         print(f"eval td_avg: {val_ret['td_avg']}")
 
-        log_items = {}
-        for k, v in train_ret.items():
-            log_items[f'train_{k}'] = v
-        for k, v in val_ret.items():
-            log_items[f'train_{k}'] = v
-        # wandb.log(log_items)
+        if args.wandb:
+            wandb.log(log_epoch(train_ret, val_ret))
         
         if writer:
             writer.add_scalar('loss/train', train_ret['loss'], epoch)
@@ -173,7 +180,7 @@ if __name__ == '__main__':
     if args.do_parse_only:
         exit()
     
-    # wandb.init(project='dlfd', entity='gariscat', config=hyper_dict)
+    wandb.init(project='dlfd', entity='kgv007', config=hyper_dict)
     rnn_cls = nn.LSTM if args.backbone == 'lstm' else nn.RNN
 
     # model_cls = RNNPredictor if not args.spec_aug else RNNPredictorSpecAug

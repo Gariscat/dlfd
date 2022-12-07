@@ -7,14 +7,14 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 
-Delta_i = 100 * 1000  # 100ms
+Delta_i = 1e8  # 100 ms = 1e8 ns
 
 
 def parse_trace(
     trace_path,
     source_id,
     obs_ord=2,
-    scale=1e8,
+    scale=Delta_i,
     reduced=True,
     lim=100000,
 ) -> np.ndarray:
@@ -55,26 +55,15 @@ def parse_trace(
 
     if reduced:
         ret = ret[:lim, :]
-        print(ret[:5, 0], '......')
+        """print(ret[:5, 0], '......')
         plt.plot(ret[:32, 0]-Delta_i)
         plt.savefig(f'pulses (unnormalized).jpg')
-        plt.close()
+        plt.close()"""
 
     ret /= scale
     return ret
-    """
-    def __getitem__(self, idx):
-        # from [idx-seqlen, idx-1] predict idx 
-        target = torch.tensor(data[idx][0])
-        
-        l, r = max(0, idx-seq_len), idx
-        source = torch.from_numpy(data[l:r])
-        left_zeros = torch.zeros(seq_len-source.shape[0], obs_ord)
-        source = torch.cat((left_zeros, source), dim=0)
-        
-        return source, target
-    """
-    
+
+
 def get_data(trace_path, source_id, obs_ord, scale, test_size=0.1):
     orig_set = parse_trace(
         trace_path=trace_path,
@@ -88,5 +77,14 @@ def get_data(trace_path, source_id, obs_ord, scale, test_size=0.1):
     return train_set, eval_set
     
     
+def log_epoch(train_ret, val_ret):
+    log_items = {}
+    for k, v in train_ret.items():
+        log_items[f'train_{k}'] = v
+    for k, v in val_ret.items():
+        log_items[f'val_{k}'] = v
+    return log_items
+
+
 if __name__ == '__main__':
     pass
