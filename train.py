@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from torch import nn, optim
 from utils import *
-from networks import RNNPredictor, RNNPredictorSpecAug
+from networks import RNNPredictor, RNNPredictorSpecAug, ChenPredictor
 import argparse
 from datetime import datetime
 import re
@@ -24,9 +24,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--source_id', type=int, default=3)
 parser.add_argument('--obs_ord', type=int, default=1)
 parser.add_argument('--hidden_size', type=int, default=32)
-parser.add_argument('--scale', type=float, default=1e8)
+parser.add_argument('--scale', type=float, default=1e6)
 parser.add_argument('--num_layers', type=int, default=1)
-parser.add_argument('--epochs', type=int, default=10)
+parser.add_argument('--epochs', type=int, default=5)
 parser.add_argument('--lr', type=float, default=5e-4)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--data_path', type=str, default='./traces/')
@@ -34,7 +34,8 @@ parser.add_argument('--seq_len', type=int, default=256)
 parser.add_argument('--loss', type=str, default='mse')
 parser.add_argument('--backbone', type=str, default='lstm')
 parser.add_argument('--seed', type=int, default=0)
-parser.add_argument('--spec_aug', type=bool, default=False)
+parser.add_argument('--model', type=str, default='Chen')
+parser.add_argument('--do_parse_only', type=bool, default=False)
 args = parser.parse_args()
 
 random.seed(args.seed)
@@ -115,28 +116,30 @@ def train(
 ):
     model.to(device)
     if evaluate_first:
-        one_epoch(model, test_data, 'val', device, -1, args=args, writer=writer)
-        
+        one_epoch(model, test_data, 'val', device, epoch_id=-1, args=args, writer=writer)
+    if args.model == 'Chen':
+        return
+
     for epoch in range(args.epochs):
-        train_ret = one_epoch(model, train_data, 'train', device, epoch, args=args, writer=writer)
+        train_ret = one_epoch(model, train_data, 'train', device, epoch_id=epoch, args=args, writer=writer)
 
         print('Epoch {}: '.format(epoch+1))
         print(f"train loss: {train_ret['loss']}")
         print(f"train fpr: {train_ret['fpr']}")
         print(f"train td_avg: {train_ret['td_avg']}")
 
-        val_ret = one_epoch(model, test_data, 'val', device, epoch, args=args, writer=writer)
+        val_ret = one_epoch(model, test_data, 'val', device, epoch_id=epoch, args=args, writer=writer)
         
         print(f"eval loss: {val_ret['loss']}")
         print(f"eval fpr: {val_ret['fpr']}")
         print(f"eval td_avg: {val_ret['td_avg']}")
 
         log_items = {}
-        for k, v in train_ret:
+        for k, v in train_ret.items():
             log_items[f'train_{k}'] = v
-        for k, v in val_ret:
+        for k, v in val_ret.items():
             log_items[f'train_{k}'] = v
-        wandb.log(log_items)
+        # wandb.log(log_items)
         
         if writer:
             writer.add_scalar('loss/train', train_ret['loss'], epoch)
@@ -161,16 +164,29 @@ if __name__ == '__main__':
     print(hyper_dict)
     # exit()
 
-    wandb.init(project='dlfd', entity='gariscat', config=hyper_dict)
-
     train_data, test_data = get_data(
         trace_path='./traces/trace.log',
         source_id=args.source_id,
         obs_ord=args.obs_ord,
         scale=args.scale,
     )
+    if args.do_parse_only:
+        exit()
+    
+    # wandb.init(project='dlfd', entity='gariscat', config=hyper_dict)
     rnn_cls = nn.LSTM if args.backbone == 'lstm' else nn.RNN
-    model_cls = RNNPredictor if not args.spec_aug else RNNPredictorSpecAug
+
+    # model_cls = RNNPredictor if not args.spec_aug else RNNPredictorSpecAug
+    if args.model == 'Chen':
+        model_cls = ChenPredictor
+    elif args.model == 'RNNBase':
+        model_cls = RNNPredictor
+    elif args.model == 'RNNSpecAug':
+        model_cls = RNNPredictorSpecAug
+    else:
+        print(f'model type {args.model} unsupported...')
+        exit()
+
     model = model_cls(
         obs_ord=args.obs_ord,
         hidden_size=args.hidden_size,

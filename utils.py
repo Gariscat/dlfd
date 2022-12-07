@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 import numpy as np
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+
+Delta_i = 100 * 1000  # 100ms
 
 
 def parse_trace(
@@ -15,26 +19,32 @@ def parse_trace(
     lim=100000,
 ) -> np.ndarray:
     rece_times = []
+    emit_times = []
     with open(trace_path, 'r') as f:
         log_items = f.readlines()
     for i, line in enumerate(tqdm(log_items, desc='initialize env - collecting log items')):
         # if i > 10000: break
         log_item = [int(x) for x in line.strip().split()]
         try:
-            source_id, _, _, rece_time, _ = log_item
-            if source_id != source_id:
+            sid, _, emit_time, rece_time, _ = log_item
+            if sid != source_id:
                 continue
         except ValueError:
             ### erroneous log item (e.g. not enough items to unpack)
             continue
         rece_times.append(rece_time)
+        # emit_times.append(emit_time)
+
+    """plt.plot(emit_times[:32])
+    plt.savefig("emissions.jpg")
+    plt.close()"""
 
     del log_items
         
     if len(rece_times) == 0:
         raise KeyError(f'Current log file does not include pulses sent from node {source_id}')
         
-    rece_times = np.array(rece_times) / scale
+    rece_times = np.array(rece_times)
     gaps = rece_times[1:] - rece_times[:-1]
     del rece_times
 
@@ -45,7 +55,12 @@ def parse_trace(
 
     if reduced:
         ret = ret[:lim, :]
+        print(ret[:5, 0], '......')
+        plt.plot(ret[:32, 0]-Delta_i)
+        plt.savefig(f'pulses (unnormalized).jpg')
+        plt.close()
 
+    ret /= scale
     return ret
     """
     def __getitem__(self, idx):

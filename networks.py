@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 from scipy.signal import stft
 import numpy as np
+from utils import *
+
+def extract_raw(observations):
+    return observations[:, :, 0].flatten().cpu().numpy()
 
 
 class RNNPredictor(nn.Module):
@@ -15,7 +19,7 @@ class RNNPredictor(nn.Module):
         hidden_size: int = 32,
         num_layers: int = 3,
         rnn: nn.Module = nn.LSTM,
-        seq_len: int = 256
+        *args, **kwargs
     ):
         super().__init__()
 
@@ -75,7 +79,7 @@ class RNNPredictorSpecAug(nn.Module):
         )
 
     def forward(self, observations):
-        raw = observations[:, :, 0].flatten().cpu().numpy()  # (batch_size, seq_len, dim)
+        raw = extract_raw(observations)  # (batch_size, seq_len, dim)
         seq_len = raw.shape[0]
         _, __, spec = stft(raw, nperseg=seq_len)
         mag_0, pha_0 = np.abs(spec)[:, 0], np.angle(spec)[:, 0]
@@ -90,3 +94,22 @@ class RNNPredictorSpecAug(nn.Module):
         t = last_hidden_states[:, -1, :]
         preds = self.mlp(t)
         return preds
+
+
+class ChenPredictor(nn.Module):
+    def __init__(self, seq_len, *args, **kwargs) -> None:
+        super().__init__()
+        self._seq_len = seq_len
+
+    def forward(self, observations):
+        batch_size = observations.shape[0]  # should always be 1
+        raw = extract_raw(observations)  # (seq_len, )
+        assert self._seq_len == raw.shape[0]
+
+        A = np.cumsum(raw)
+        delta = np.full(self._seq_len, Delta_i)
+        Delta = np.cumsum(delta)
+
+        EA = np.mean(Delta-A) + (self._seq_len + 1) * Delta_i
+        # predict time difference instead of absolute time
+        return torch.tensor([EA - A[-1]]).reshape(batch_size, 1).to(observations.device)

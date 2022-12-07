@@ -23,4 +23,5 @@ nvidia-smi
 
 cd ~/dlfd/
 
+wandb offline
 python grid_exp.py --obs_ord ${SLURM_ARRAY_TASK_ID}
