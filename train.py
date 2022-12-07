@@ -83,9 +83,9 @@ def one_epoch(
                 wandb.log({
                     'step loss': loss.item(),
                     'step detection time (scaled)': detection_time,
-                    'step fp': (pred < target).item()
+                    'step fp': int((pred < target).item())
                 })
-            fp_cnt += (pred < target).item()
+            fp_cnt += int((pred < target).item())
             td_tot += detection_time.item()
             losses.append(loss.item())
 
