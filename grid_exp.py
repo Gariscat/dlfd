@@ -12,6 +12,7 @@ if __name__ == '__main__':
     for model in ('Chen', 'RNNBase', 'RNNSpecAug',):
         if 'RNN' not in model:
             # Chen's baseline
+            # for alpha in (100, 500, 1000,):
             subprocess.call(f'python train.py --model Chen', shell=True)
             continue
             

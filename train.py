@@ -24,10 +24,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--source_id', type=int, default=3)
 parser.add_argument('--obs_ord', type=int, default=1)
 parser.add_argument('--hidden_size', type=int, default=32)
-parser.add_argument('--scale', type=float, default=1e6)
+parser.add_argument('--scale', type=float, default=Delta_i)
 parser.add_argument('--num_layers', type=int, default=1)
 parser.add_argument('--epochs', type=int, default=5)
-parser.add_argument('--lr', type=float, default=5e-4)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--data_path', type=str, default='./traces/')
 parser.add_argument('--seq_len', type=int, default=256)
 parser.add_argument('--loss', type=str, default='mse')
@@ -72,9 +72,10 @@ def one_epoch(
             length += source.shape[0]
             # forward
             output = model(source)
-            pred = torch.argmax(output, dim=1)
+            ### pred = torch.argmax(output, dim=1) ?????? DAMN!
+            pred = output
             # criteria
-            loss = criterion(output, target)
+            loss = criterion(pred, target)
             detection_time = torch.maximum(
                 input=pred-target,
                 other=torch.zeros_like(pred)
@@ -83,9 +84,11 @@ def one_epoch(
                 wandb.log({
                     'step loss': loss.item(),
                     'step detection time (scaled)': detection_time,
-                    'step fp': int((pred < target).item())
+                    'step fp': float((pred < target).item())
                 })
-            fp_cnt += int((pred < target).item())
+            else:  # debug mode
+                print(pred, target)
+            fp_cnt += float((pred < target).item())
             td_tot += detection_time.item()
             losses.append(loss.item())
 
@@ -180,7 +183,8 @@ if __name__ == '__main__':
     if args.do_parse_only:
         exit()
     
-    wandb.init(project='dlfd', entity='kgv007', config=hyper_dict)
+    if args.wandb:
+        wandb.init(project='dlfd', entity='kgv007', config=hyper_dict)
     rnn_cls = nn.LSTM if args.backbone == 'lstm' else nn.RNN
 
     # model_cls = RNNPredictor if not args.spec_aug else RNNPredictorSpecAug
@@ -200,6 +204,7 @@ if __name__ == '__main__':
         num_layers=args.num_layers,
         rnn=rnn_cls,
         seq_len=args.seq_len,
+        scale=args.scale,
     )
 
     cur_time = re.sub(r'\W+', '', str(datetime.now()))

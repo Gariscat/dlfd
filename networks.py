@@ -59,6 +59,7 @@ class RNNPredictorSpecAug(nn.Module):
         num_layers: int = 3,
         rnn: nn.Module = nn.LSTM,
         seq_len: int = 256,
+        *args, **kwargs
     ):
         super().__init__()
         # n_fft = seq_len
@@ -97,9 +98,10 @@ class RNNPredictorSpecAug(nn.Module):
 
 
 class ChenPredictor(nn.Module):
-    def __init__(self, seq_len, *args, **kwargs) -> None:
+    def __init__(self, seq_len, scale, *args, **kwargs) -> None:
         super().__init__()
         self._seq_len = seq_len
+        self._scale = scale
 
     def forward(self, observations):
         batch_size = observations.shape[0]  # should always be 1
@@ -107,9 +109,9 @@ class ChenPredictor(nn.Module):
         assert self._seq_len == raw.shape[0]
 
         A = np.cumsum(raw)
-        delta = np.full(self._seq_len, Delta_i)
+        delta = np.full(self._seq_len, Delta_i / self._scale)
         Delta = np.cumsum(delta)
-
-        EA = np.mean(Delta-A) + (self._seq_len + 1) * Delta_i
+        # print(A, Delta)
+        EA = np.mean(A - Delta) + (self._seq_len + 1) * Delta_i / self._scale
         # predict time difference instead of absolute time
         return torch.tensor([EA - A[-1]]).reshape(batch_size, 1).to(observations.device)
